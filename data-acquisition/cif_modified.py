@@ -108,8 +108,8 @@ def getOECDJSONStructure(dsname, root_dir = 'http://stats.oecd.org/SDMX-JSON/dat
         print('\nError: %s' % response.status_code)
         
 
-def createOneCountryDataFrameFromOECD(country = 'CZE', dsname = 'MEI', subject = [], measure = [], frequency = 'M', startDate = None, endDate = None):      
-    
+def createOneCountryDataFrameFromOECD(country = 'CZE', dsname = 'MEI', subject = [], measure = [], frequency = 'M', startDate = None, endDate = None):
+
     """
     Request data from OECD API and return pandas DataFrame. This works with OECD datasets
     where the first dimension is location (check the structure with getOECDJSONStructure()
@@ -145,32 +145,32 @@ def createOneCountryDataFrameFromOECD(country = 'CZE', dsname = 'MEI', subject =
     """
     
     # Data download
-    
+
     response = makeOECDRequest(dsname
                                  , [[country], subject, measure, [frequency]]
                                  , {'startTime': startDate, 'endTime': endDate, 'dimensionAtObservation': 'AllDimensions'})
-    
+
     # Data transformation
-    
+
     if (response.status_code == 200):
-        
+
         responseJson = response.json()
-        
+
         obsList = responseJson.get('dataSets')[0].get('observations')
-        
+
         if (len(obsList) > 0):
-            
+
             if (len(obsList) >= 999999):
                 print('Warning: You are near response limit (1 000 000 observations).')
-        
+
             #print('Data downloaded from %s' % response.url)
-            
+
             timeList = [item for item in responseJson.get('structure').get('dimensions').get('observation') if item['id'] == 'TIME_PERIOD'][0]['values']
             #subjectList = [item for item in responseJson.get('structure').get('dimensions').get('observation') if item['id'] == 'SUBJECT'][0]['values']
             #measureList = [item for item in responseJson.get('structure').get('dimensions').get('observation') if item['id'] == 'MEASURE'][0]['values']
             subjectList = responseJson.get('structure').get('dimensions').get('observation')[1]['values']
             measureList = responseJson.get('structure').get('dimensions').get('observation')[2]['values']
-            
+
             obs = pd.DataFrame(obsList).transpose()
             obs.rename(columns = {0: 'series'}, inplace = True)
             obs['id'] = obs.index
@@ -180,21 +180,21 @@ def createOneCountryDataFrameFromOECD(country = 'CZE', dsname = 'MEI', subject =
             obs['measure'] = obs.apply(lambda x: measureList[int(x['dimensions'][2])]['id'], axis = 1)
             obs['time'] = obs.apply(lambda x: timeList[int(x['dimensions'][5])]['id'], axis = 1)
             #obs['names'] = obs['subject'] + '_' + obs['measure']
-            
+
             #data = obs.pivot_table(index = 'time', columns = ['names'], values = 'series')
-            
+
             data = obs.pivot_table(index = 'time', columns = ['subject', 'measure'], values = 'series')
-            
+
             return(data, pd.DataFrame(subjectList), pd.DataFrame(measureList))
-        
+
         else:
-        
+
             print('Error: No available records, please change parameters')
             return(pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
 
     else:
         
-        print('Error: %s' % response.status_code)
+        print(f'Error: {response.status_code}')
         return(pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
 
 
@@ -263,7 +263,7 @@ def createDataFrameFromOECD(countries = ['CZE', 'AUT', 'DEU', 'POL', 'SVK'], dsn
 
 
 def getOnlyBestMeasure(df, priorityList, countryColName = 'country', subjectColName = 'subject', measureColName = 'measure'):
-    
+
     """
     Select only one measure per country and subject.
     
@@ -290,63 +290,63 @@ def getOnlyBestMeasure(df, priorityList, countryColName = 'country', subjectColN
     data = pd.DataFrame()
     subjectMultiInd = df.columns.names.index(subjectColName)
     measureMultiInd = df.columns.names.index(measureColName)
-    
+
     try:
-        
+
         countryMultiInd = df.columns.names.index(countryColName)
         countryList = df.columns.levels[countryMultiInd]
         print("Data with country multiindex level.")
-        
+
     except:
-        
+
         countryList = ['oneCountryOnly']  
         print("Data without country multiindex level.")
-    
+
     for c in countryList:  
         
         if (c != 'oneCountryOnly'):
-            
+
             #dfCountryPart = df.select(lambda x: x[countryMultiInd] == c, axis = 1).copy()
             dfCountryPart = df.loc[ : , [x for x in df.columns if x[countryMultiInd] == c]].copy()
-            
+
         else:
-            
+
             dfCountryPart = df.copy()
-        
+
         for i in list(dfCountryPart.columns.get_level_values(subjectMultiInd).unique()):
             
             #dfPart = dfCountryPart.select(lambda x: x[subjectMultiInd] == i, axis = 1).copy()
             dfPart = dfCountryPart.loc[ : , [x for x in dfCountryPart.columns if x[subjectMultiInd] == i]].copy()
-            
+
             if dfPart.shape[1] > 1: # Several measures of one subject
                 
                 col = list(dfPart.columns.get_level_values(measureMultiInd).unique()) # returns existing levels only!
-                
+
                 ind = True
                 j = 0
                 while ind and (j < len(priorityList)):
-                    
+
                     selMeasure = priorityList[j]
-                    
+
                     if selMeasure in col:
-                        
+
                         #newCol = dfPart.select(lambda x: x[measureMultiInd] == selMeasure, axis = 1)
                         newCol = dfPart.loc[ : , [x for x in dfPart.columns if x[measureMultiInd] == selMeasure]].copy()
                         #newCol.columns = ['_'.join(col).strip() for col in newCol.columns.values]
                         data =  pd.concat([data, newCol], axis = 1)
-                        
+
                         ind = False
-                    
+
                     j += 1
-                
+
                 if ind:
-                    print('Warning: variable %s not selected.' % (i))
-            
+                    print(f'Warning: variable {i} not selected.')
+
             elif dfPart.shape[1] == 1: # One measure only
-            
+
                 #dfPart.columns = ['_'.join(col).strip() for col in dfPart.columns.values]
                 data =  pd.concat([data, dfPart], axis = 1)
-        
+
     return(data)
 
 
@@ -397,29 +397,29 @@ def useIndexAsColumn(df):
 
 
 def renameQuarters(x):
-    
+
     """
     Rename quarters from YYYY-QQ to YYYY-MM format.
     """
         
     if not isinstance(x, str):
         raise ValueError('Parameter x should be a string type.')
-    
+
     if (re.search('Q1', x)):
         x = re.sub('Q1', '02', x)
-        
+
     elif (re.search('Q2', x)):
         x = re.sub('Q2', '05', x)
-        
+
     elif (re.search('Q3', x)):
         x = re.sub('Q3', '08', x)
-        
+
     elif (re.search('Q4', x)):
         x = re.sub('Q4', '11', x)
-        
+
     else:
-        print('Warning: Unknown format of index "%s"' % (str(x)))
-        
+        print(f'Warning: Unknown format of index "{str(x)}"')
+
     return(x)
 
 
@@ -529,7 +529,7 @@ def getIndexAsDate(df):
 
 
 def getSAForecasts(series, forecastSteps = 6, showPlots = True, savePlots = None, saveLogs = None):
-    
+
     """
     Get seasonally adjusted time series with forecasts.
     
@@ -556,59 +556,59 @@ def getSAForecasts(series, forecastSteps = 6, showPlots = True, savePlots = None
     try:
         
         # Get best model info
-        
+
         with warnings.catch_warnings():
-            
+
             warnings.simplefilter("ignore")
-            
+
             series_ord = smX13.x13_arima_select_order(series) 
             print('\nBEST MODEL BY TRAMO:', series_ord.order, series_ord.sorder)
-        
+
         # Get seasonally adjusted data
-        
+
         maxOrder = min(max(series_ord.order[0], series_ord.order[2]), 4) # max from AR and MA orders, no larger than 4
         maxSOrder = min(max(series_ord.sorder[0], series_ord.sorder[2]), 2) # max from seasonal AR and MA orders, no larger than 2
         diff = min(series_ord.order[1], 2) # order of differencing, no larger than 2
         diffS = min(series_ord.sorder[1], 1) # order of seasonal differencing, no larger than 1
-        
+
         with warnings.catch_warnings():
-            
+
             warnings.simplefilter("ignore")
-            
+
             series_X13 = smX13.x13_arima_analysis(endog = series, maxorder = (maxOrder, maxSOrder), maxdiff = None, diff = (diff, diffS), outlier = True, forecast_years = 0)
-        
+
         series_SA = pd.DataFrame({series.columns[0]: series_X13.seasadj})        
-        
+
         # Create short-term forecasts
-        
+
         series_SA_ARIMA_model = smARIMA.ARIMA(series_SA, order = series_ord.order)
-        
+
         series_SA_ARIMA = series_SA_ARIMA_model.fit(disp = 0)
         #print('\nARIMA model with TRAMO parameters:')
         #print(series_SA_ARIMA.summary())
-        
+
         series_SA_forecast = series_SA_ARIMA.forecast(steps = forecastSteps)[0] # use ARIMA with X13 specifications to create forecasts (forecasts with TRAMO-SEATS directly in X13 doesn't work)
         series_SA_forecast = pd.DataFrame(series_SA_forecast
                                       , columns = [series.columns[0]]
                                       , index = pd.date_range(series_SA.index[-1], periods = forecastSteps + 1, freq='MS')[1:]
                                       )
-        
+
         series_SA_withForecast = series_SA.append(series_SA_forecast)
         #series_SA_withForecast.set_index(pd.date_range(series_SA.index[0], periods = len(series_SA) + forecastSteps, freq='MS'), inplace = True)
-        
+
         mpl.style.use('classic') # old matplotlib visualization style
-        
+
         if showPlots:
-            
+
             series_X13.plot()
             series_SA.plot()
             series_SA_withForecast.plot()
-            
+
         if savePlots:
             # saving only SA with forecast
-            
+
             plt.ioff() # Turn interactive plotting off
-            
+
             fig, ax = plt.subplots(nrows = 1, ncols = 1, figsize = (6, 2))
             fig.patch.set_facecolor('white')
             ax.ticklabel_format(useOffset = False, style = 'plain', axis = 'y')
@@ -616,43 +616,46 @@ def getSAForecasts(series, forecastSteps = 6, showPlots = True, savePlots = None
             plt.yticks(fontsize = 10)
             ax.plot(series_SA_withForecast, color = 'gray')
             ax.margins(x = 0.0, y = 0.1)
-            fig.savefig(os.path.join(savePlots, str(series.columns[0]) + '_01_SA.png'), dpi = 300)
+            fig.savefig(
+                os.path.join(savePlots, f'{str(series.columns[0])}_01_SA.png'),
+                dpi=300,
+            )
             plt.close(fig)
-            
+
         if saveLogs:
-            
+
             saveLogs.write('\nBEST MODEL BY TRAMO: ' + str(series_ord.order) + str(series_ord.sorder))
-            
+
     #        warnings = re.split('WARNING: ', str(series_X13.stdout)) ## attention, we now use warnings package!
     #        
     #        if len(warnings) > 1:
     #        
     #            warnings = [warn.replace('\\r\\n', ' ').strip() for warn in warnings[1:]]
     #            saveLogs.write('\nX13 WARNINGS: ' + str(warnings))
-            
+
             saveLogs.write('\nX13 WARNINGS: ' + str(series_X13.stdout).replace('\\r\\n', ' ').strip())
             saveLogs.flush()
-        
+
     except Exception as e:
         
         series_SA_withForecast = series
-        
+
         print('\nBEST MODEL BY TRAMO: None')
         print('\nX13 ERRORS: ' + str(e))
         print('\nWARNING: Returning original time series without forecasts.')
-        
+
         if saveLogs:
-            
+
             saveLogs.write('\nBEST MODEL BY TRAMO: None')
             saveLogs.write('\nX13 ERRORS: ' + str(e).replace('\\r\\n', ' ').strip())        
             saveLogs.write('\nWARNING: Returning original time series without forecasts.')
             saveLogs.flush()
-            
+
         if savePlots:
             # saving only SA with forecast
-            
+
             plt.ioff() # Turn interactive plotting off
-            
+
             fig, ax = plt.subplots(nrows = 1, ncols = 1, figsize = (6, 2))
             fig.patch.set_facecolor('white')
             ax.ticklabel_format(useOffset = False, style = 'plain', axis = 'y')
@@ -660,14 +663,17 @@ def getSAForecasts(series, forecastSteps = 6, showPlots = True, savePlots = None
             plt.yticks(fontsize = 10)
             ax.plot(series_SA_withForecast, color = 'gray')
             ax.margins(x = 0.0, y = 0.1)
-            fig.savefig(os.path.join(savePlots, str(series.columns[0]) + '_01_SA.png'), dpi = 300)
+            fig.savefig(
+                os.path.join(savePlots, f'{str(series.columns[0])}_01_SA.png'),
+                dpi=300,
+            )
             plt.close(fig)
-    
+
     return(series_SA_withForecast)
         
 
 def applyHPTwice(series, dateMax = None, lambda1 = 133107.94, lambda2 = 13.93, showPlots = True, savePlots = None, saveAllPlots = False, returnTrend = False):
-    
+
     """
     Apply Hodrick-Prescott filter twice: first to remove the trend,
     second to get rid of seasonality and irregularities.
@@ -705,24 +711,24 @@ def applyHPTwice(series, dateMax = None, lambda1 = 133107.94, lambda2 = 13.93, s
     """
     
     if not(dateMax):
-        
+
         dateMax = series.index[-1]
 
     series_HP1 = smHP.hpfilter(series, lamb = lambda1)
     series_HP2 = smHP.hpfilter(series_HP1[0], lamb = lambda2)
     series_HP = series_HP2[1][series_HP2[1].index <= dateMax] # without forecasted values
-    
+
     mpl.style.use('classic') # old matplotlib visualization style
-    
+
     if showPlots:
-        
+
         plotHP(series_HP1)
         plotHP(series_HP2, phase = 2)
-        
+
     if savePlots:
         
         plt.ioff() # Turn interactive plotting off
-        
+
         fig, ax = plt.subplots(nrows = 1, ncols = 1, figsize = (6, 2))
         fig.patch.set_facecolor('white')
         ax.ticklabel_format(useOffset = False, style = 'plain', axis = 'y')
@@ -730,9 +736,12 @@ def applyHPTwice(series, dateMax = None, lambda1 = 133107.94, lambda2 = 13.93, s
         plt.yticks(fontsize = 10)
         ax.plot(series_HP, color = 'gray')
         ax.margins(x = 0.0, y = 0.1)
-        fig.savefig(os.path.join(savePlots, str(series_HP.columns[0]) + '_02_HP.png'), dpi = 300)
+        fig.savefig(
+            os.path.join(savePlots, f'{str(series_HP.columns[0])}_02_HP.png'),
+            dpi=300,
+        )
         plt.close(fig)
-        
+
         if saveAllPlots:
             
             fig, ax = plt.subplots(nrows = 1, ncols = 1, figsize = (6, 2))
@@ -742,9 +751,14 @@ def applyHPTwice(series, dateMax = None, lambda1 = 133107.94, lambda2 = 13.93, s
             plt.yticks(fontsize = 10)
             plotHP(series_HP1)
             ax.margins(x = 0.0, y = 0.1)
-            fig.savefig(os.path.join(savePlots, str(series_HP.columns[0]) + '_02a_HP.png'), dpi = 300)
+            fig.savefig(
+                os.path.join(
+                    savePlots, f'{str(series_HP.columns[0])}_02a_HP.png'
+                ),
+                dpi=300,
+            )
             plt.close(fig)
-            
+
             fig, ax = plt.subplots(nrows = 1, ncols = 1, figsize = (6, 2))
             fig.patch.set_facecolor('white')
             ax.ticklabel_format(useOffset = False, style = 'plain', axis = 'y')
@@ -752,13 +766,15 @@ def applyHPTwice(series, dateMax = None, lambda1 = 133107.94, lambda2 = 13.93, s
             plt.yticks(fontsize = 10)
             plotHP(series_HP2, phase = 2)
             ax.margins(x = 0.0, y = 0.1)
-            fig.savefig(os.path.join(savePlots, str(series_HP.columns[0]) + '_02b_HP.png'), dpi = 300)
+            fig.savefig(
+                os.path.join(
+                    savePlots, f'{str(series_HP.columns[0])}_02b_HP.png'
+                ),
+                dpi=300,
+            )
             plt.close(fig)
-    
-    if returnTrend:
-        return(series_HP1[1], series_HP)
-    else:
-        return(series_HP)
+
+    return (series_HP1[1], series_HP) if returnTrend else series_HP
     
 
 def normaliseSeries(series, createInverse = False, showPlots = True, savePlots = None):
@@ -787,19 +803,19 @@ def normaliseSeries(series, createInverse = False, showPlots = True, savePlots =
     
     mean = series.mean()[0]
     mad = (series - mean).abs().sum()[0] / series.shape[0] # mean absolute deviation
-    
+
     series_norm = ((series - mean) / mad) + 100
-    
+
     mpl.style.use('classic') # old matplotlib visualization style
-    
+
     if showPlots:
-        
+
         series_norm.plot()
-        
+
     if savePlots:
         
         plt.ioff() # Turn interactive plotting off
-        
+
         fig, ax = plt.subplots(nrows = 1, ncols = 1, figsize = (6, 2))
         fig.patch.set_facecolor('white')
         ax.ticklabel_format(useOffset = False, style = 'plain', axis = 'y')
@@ -807,24 +823,27 @@ def normaliseSeries(series, createInverse = False, showPlots = True, savePlots =
         plt.yticks(fontsize = 10)
         ax.plot(series_norm, color = 'gray')
         ax.margins(x = 0.0, y = 0.1)
-        fig.savefig(os.path.join(savePlots, str(series_norm.columns[0]) + '_03_norm.png'), dpi = 300)
+        fig.savefig(
+            os.path.join(
+                savePlots, f'{str(series_norm.columns[0])}_03_norm.png'
+            ),
+            dpi=300,
+        )
         plt.close(fig)
-    
-    if createInverse:
-        
-        colName = series.columns[0]
-        series_inv_norm = ((series - mean) / mad) * (-1) + 100
-        series_inv_norm = series_inv_norm.rename(columns = {colName: str(colName) + '_INV'})
-        
-        return(series_norm, series_inv_norm)
-        
-    else:
-        
+
+    if not createInverse:
         return(series_norm)
+    series_inv_norm = ((series - mean) / mad) * (-1) + 100
+    colName = series.columns[0]
+    series_inv_norm = series_inv_norm.rename(
+        columns={colName: f'{str(colName)}_INV'}
+    )
+
+    return(series_norm, series_inv_norm)
 
 
 def pipelineOneColumnTransformations(col, showPlots = True, savePlots = None, saveLogs = None, createInverse = False):
-    
+
     """
     Pipeline connecting transformation functions (forecasting, HP filter and
     normalising the series).
@@ -858,13 +877,13 @@ def pipelineOneColumnTransformations(col, showPlots = True, savePlots = None, sa
     """
     
     # a) Save plot of the original series
-    
+
     mpl.style.use('classic') # old matplotlib visualization style
-            
+
     if savePlots:
         
         plt.ioff() # Turn interactive plotting off
-    
+
         fig, ax = plt.subplots(nrows = 1, ncols = 1, figsize = (6, 2))
         fig.patch.set_facecolor('white')
         ax.ticklabel_format(useOffset = False, style = 'plain', axis = 'y')
@@ -872,43 +891,46 @@ def pipelineOneColumnTransformations(col, showPlots = True, savePlots = None, sa
         plt.yticks(fontsize = 10)
         ax.plot(col, color = 'gray')
         ax.margins(x = 0.0, y = 0.1)
-        fig.savefig(os.path.join(savePlots, str(col.columns[0]) + '_00_orig.png'), dpi = 300)
+        fig.savefig(
+            os.path.join(savePlots, f'{str(col.columns[0])}_00_orig.png'),
+            dpi=300,
+        )
         plt.close(fig)
-    
-    
+
+
     # b) Seasonal adjustment, outlier filtering and short-term prediction
-    
+
     col_SA_withForecast = getSAForecasts(col, showPlots = showPlots, savePlots = savePlots, saveLogs = saveLogs)
-    
-    
+
+
     # c) Cycle identification (Hodrick-Prescott filter)
-    
+
     if (col_SA_withForecast.shape[0] > 12):
-        
+
         col_SA_trend, col_SA_HP = applyHPTwice(col_SA_withForecast, dateMax = col.index[-1], showPlots = showPlots, savePlots = savePlots, returnTrend = True)
-    
+
     else:
-        
+
         print('Warning: Series shorter than 12 months. No cycle identification possible. No plots created.')
         col_SA_trend = col_SA_withForecast
         col_SA_HP = col_SA_withForecast
-        
+
         showPlots = False # otherwise error in matplotlib
         savePlots = False # otherwise error in matplotlib
-        
-    
+
+
     # d) Normalisation
-    
+
     if createInverse:
-        
+
         col_SA_HP_norm, col_inv_SA_HP_norm = normaliseSeries(col_SA_HP, createInverse = createInverse, showPlots = showPlots, savePlots = savePlots)
-        
+
         return(col_SA_withForecast, col_SA_trend, col_SA_HP, col_SA_HP_norm, col_inv_SA_HP_norm)
-    
+
     else:
-        
+
         col_SA_HP_norm = normaliseSeries(col_SA_HP, createInverse = createInverse, showPlots = showPlots, savePlots = savePlots)
-        
+
         return(col_SA_withForecast, col_SA_trend, col_SA_HP, col_SA_HP_norm)
 
 
@@ -979,7 +1001,7 @@ def pipelineTransformations(df, showPlots = True, savePlots = None, saveLogs = N
 # BRY-BOSCHAN ALGORITHM
 
 def getLocalExtremes(df, showPlots = True, savePlots = None, nameSuffix = ''):
-    
+
     """
     Find local maxima/minima in df. Mark all point which are higher/lower than their 5 nearest neighbours.
     
@@ -1002,24 +1024,30 @@ def getLocalExtremes(df, showPlots = True, savePlots = None, nameSuffix = ''):
     """
     
     dataShifted = pd.DataFrame(index = df.index)
-    
+
     for i in range(-5, 5):
         
-        dataShifted = pd.concat([dataShifted, df.shift(i).rename(columns = {df.columns[0]: 'shift_' + str(i)})], axis = 1)
-        
+        dataShifted = pd.concat(
+            [
+                dataShifted,
+                df.shift(i).rename(columns={df.columns[0]: f'shift_{str(i)}'}),
+            ],
+            axis=1,
+        )
+
     dataInd = pd.DataFrame(0, index = df.index, columns = df.columns)
     dataInd[dataShifted['shift_0'] >= dataShifted.drop('shift_0', axis = 1).max(axis = 1)] = 1
     dataInd[dataShifted['shift_0'] <= dataShifted.drop('shift_0', axis = 1).min(axis = 1)] = -1
-    
+
     # No extremes near the beginning/end of the series
-    
+
     dataInd[:5] = 0
     dataInd[-5:] = 0
-    
+
     if showPlots or savePlots:
-        
+
         plotIndicator(df, dataInd, showPlots = showPlots, savePlots = savePlots, nameSuffix = nameSuffix)
-    
+
     return(dataInd)
 
 
@@ -1132,7 +1160,7 @@ def checkAlterations(df, indicator, keepFirst = False, printDetails = True, show
 
 
 def checkNeighbourhood(df, indicator, printDetails = True, showPlots = True, savePlots = None, nameSuffix = '', saveLogs = None):
-    
+
     """
     Check the consistency of values between two turning points,
     otherwise delete turning points that aren't the lowest/highest
@@ -1163,69 +1191,69 @@ def checkNeighbourhood(df, indicator, printDetails = True, showPlots = True, sav
     """
     
     dataInd = indicator.copy()
-    
+
     if printDetails:
-        
+
         print('\nChecking extremes at %s for higher/lower neighbours:' % (dataInd.columns[0]))
-    
+
     if saveLogs:
-        
+
         saveLogs.write('\nChecking extremes at %s for higher/lower neighbours:' % (dataInd.columns[0]))
-    
+
     lastDate = df.index[0]
-    
+
     maxDate = dataInd.index[-1]
-    
+
     try:
-        
+
         thisDate = dataInd[dataInd != 0].first_valid_index()
-        
+
     except:
-        
+
         thisDate = maxDate
-    
+
     while thisDate < maxDate:
         
         thisExt = dataInd.loc[thisDate][0]
-        
+
         try:
-        
+
             nextDate = dataInd[thisDate:][1:][dataInd != 0].first_valid_index()
-            
+
         except IndexError: # previous versions of pandas throw exception
-            
+
             nextDate = maxDate
-            
-        if nextDate == None: # newer versions of pandas returns None
-            
+
+        if nextDate is None: # newer versions of pandas returns None
+
             nextDate = maxDate
-        
+
         if ((thisExt * df.loc[lastDate:nextDate]).max()[0] > (thisExt * df.loc[thisDate])[0]): # is there higher/lower point then this max/min?
-            
+
             if printDetails:
-                
+
                 print('Deleting extreme (%d) at %s' % (thisExt, str(thisDate)))
-            
+
             if saveLogs:
-                
+
                 saveLogs.write('\nDeleting extreme (%d) at %s' % (thisExt, str(thisDate)))
-            
+
             dataInd.loc[thisDate] = 0
-            
+
         else:
-            
+
             lastDate = thisDate
-            
+
         thisDate = nextDate
-    
+
     if showPlots or savePlots:
-        
+
         plotIndicator(df, dataInd, showPlots = showPlots, savePlots = savePlots, nameSuffix = nameSuffix)
-    
+
     if saveLogs:
-        
+
         saveLogs.flush()
-        
+
     return(dataInd)
 
 
@@ -1601,7 +1629,7 @@ def checkPhaseLength(df, indicator, phaseLength = 5, meanVal = 100, printDetails
 
 
 def pipelineOneColumnTPDetection(col, printDetails = True, showPlots = True, savePlots = None, saveLogs = None, createInverse = False):
-    
+
     """
     Pipeline connecting functions to detect turning points (local extremes,
     checking for alterations, checking for cycle and phase length).
@@ -1632,52 +1660,54 @@ def pipelineOneColumnTPDetection(col, printDetails = True, showPlots = True, sav
     """
     
     # a) Looking for local maxima/minima
-    
+
     col_ind_local = getLocalExtremes(df = col, showPlots = showPlots, savePlots = savePlots, nameSuffix = '_04_localExt')
-    
-    
+
+
     # b) Check the turning points alterations
-    
+
     col_ind_neigh = checkNeighbourhood(df = col, indicator = col_ind_local, printDetails = printDetails, showPlots = showPlots, saveLogs = saveLogs)
     col_ind_alter = checkAlterations(df = col, indicator = col_ind_neigh, printDetails = printDetails, showPlots = showPlots, saveLogs = saveLogs)
-    
-    
+
+
     # c) Check minimal length of cycle (15 months)
-    
+
     col_ind_cycleLength = checkCycleLength(df = col, indicator = col_ind_alter, printDetails = printDetails, showPlots = showPlots, saveLogs = saveLogs)
-    
-    
+
+
     # d) Check the turning points alterations again
-    
+
     col_ind_neighAgain = checkNeighbourhood(df = col, indicator = col_ind_cycleLength, printDetails = printDetails, showPlots = showPlots, saveLogs = saveLogs)
     col_ind_alterAgain = checkAlterations(df = col, indicator = col_ind_neighAgain, printDetails = printDetails, showPlots = showPlots, saveLogs = saveLogs)
-    
-    
+
+
     # e) Check minimal length of phase (5 months)
-    
+
     col_ind_phaseLength = checkPhaseLength(df = col, indicator = col_ind_alterAgain, printDetails = printDetails, showPlots = showPlots, saveLogs = saveLogs)
-    
-    
+
+
     # f) Check the turning points alterations for the last time
-    
+
     col_ind_neighLast = checkNeighbourhood(df = col, indicator = col_ind_phaseLength, printDetails = printDetails, showPlots = showPlots, saveLogs = saveLogs)
     col_ind_turningPoints = checkAlterations(df = col, indicator = col_ind_neighLast, printDetails = printDetails, showPlots = showPlots, savePlots = savePlots, nameSuffix = '_05_ext', saveLogs = saveLogs)  
-    
+
     if createInverse:
         
         colName = col.columns[0]
         col_inv_ind_turningPoints = col_ind_turningPoints.copy() * -1
-        col_inv_ind_turningPoints = col_inv_ind_turningPoints.rename(columns = {colName: str(colName) + '_INV'})
-        
+        col_inv_ind_turningPoints = col_inv_ind_turningPoints.rename(
+            columns={colName: f'{str(colName)}_INV'}
+        )
+
         return(col_ind_turningPoints, col_inv_ind_turningPoints)
-        
+
     else:
-        
+
         return(col_ind_turningPoints)
 
 
-def pipelineTPDetection(df, origColumns = None, printDetails = True, showPlots = True, savePlots = None, saveLogs = None):    
-    
+def pipelineTPDetection(df, origColumns = None, printDetails = True, showPlots = True, savePlots = None, saveLogs = None):
+
     """
     Pipeline connecting functions to detect turning points (local extremes,
     checking for alterations, checking for cycle and phase length) for multiple
@@ -1711,80 +1741,76 @@ def pipelineTPDetection(df, origColumns = None, printDetails = True, showPlots =
     """
     
     turningPoints = pd.DataFrame(index = df.index)
-    
+
     if isinstance(origColumns, list):
-        
+
         columns = origColumns
         createInverse = True
-        
+
     else:
-        
+
         columns = df.columns
         createInverse = False
-    
+
     nCol = len(columns)
-    
+
     for i, item in enumerate(columns):
         # i, item = list(enumerate(columns))[0]
-        
+
         print("\nANALYSING SERIES %d from %d: %s" % (i + 1, nCol, item))
-        
+
         if saveLogs:
-            
+
             saveLogs.write("\n\nANALYSING SERIES %d from %d: %s" % (i + 1, nCol, item))
             saveLogs.flush()
-        
+
         col = pd.DataFrame(df[item][df[item].notnull()], columns = [item])
-        
+
         if (col.shape[0] == 0): # empty series
-        
+
             print("\nWarning: Empty series.")
-            
+
             if saveLogs:
-                
+
                 saveLogs.write("\nWarning: Empty series.")
                 saveLogs.flush()
-            
+
             col_turningPoints = pd.DataFrame(index = df.index, columns = [item])
             turningPoints = pd.concat([turningPoints, col_turningPoints], axis = 1)
-            
+
             if createInverse:
-                
+
                 col_inv_turningPoints = pd.DataFrame(index = df.index, columns = [item + '_INV'])
                 turningPoints = pd.concat([turningPoints, col_inv_turningPoints], axis = 1)
-                
+
+        elif createInverse:
+
+            col_turningPoints, col_inv_turningPoints = pipelineOneColumnTPDetection(col = col, printDetails = printDetails, showPlots = showPlots, savePlots = savePlots, saveLogs = saveLogs, createInverse = createInverse)
+
+            if showPlots or savePlots:
+
+                # Save also plot of inverse series (plot of original series saved during previous step)
+
+                invColName = col_inv_turningPoints.columns[0]
+                plotIndicator(pd.DataFrame(df[invColName][df[invColName].notnull()]), col_inv_turningPoints, showPlots = showPlots, savePlots = savePlots, nameSuffix = '_05_ext')
+
+            # Add to the DataFrame
+
+            turningPoints = pd.concat([turningPoints, col_turningPoints, col_inv_turningPoints], axis = 1)
+
         else:
-            
-            # Get turning points
-            
-            if createInverse:
-                
-                col_turningPoints, col_inv_turningPoints = pipelineOneColumnTPDetection(col = col, printDetails = printDetails, showPlots = showPlots, savePlots = savePlots, saveLogs = saveLogs, createInverse = createInverse)
-                
-                if showPlots or savePlots:
-                    
-                    # Save also plot of inverse series (plot of original series saved during previous step)
-                    
-                    invColName = col_inv_turningPoints.columns[0]
-                    plotIndicator(pd.DataFrame(df[invColName][df[invColName].notnull()]), col_inv_turningPoints, showPlots = showPlots, savePlots = savePlots, nameSuffix = '_05_ext')
-                
-                # Add to the DataFrame
-                
-                turningPoints = pd.concat([turningPoints, col_turningPoints, col_inv_turningPoints], axis = 1)
-                
-            else:
-                
-                col_turningPoints = pipelineOneColumnTPDetection(col = col, printDetails = printDetails, showPlots = showPlots, savePlots = savePlots, saveLogs = saveLogs, createInverse = createInverse)
-                
-                # Add to the DataFrame
-                
-                turningPoints = pd.concat([turningPoints, col_turningPoints], axis = 1)
-            
+
+            col_turningPoints = pipelineOneColumnTPDetection(col = col, printDetails = printDetails, showPlots = showPlots, savePlots = savePlots, saveLogs = saveLogs, createInverse = createInverse)
+
+            # Add to the DataFrame
+
+            turningPoints = pd.concat([turningPoints, col_turningPoints], axis = 1)
+
     return(turningPoints)
 
 
 def realTimeTPDetectionFromArchive(df, monthsToBeChecked = 3, indName = 'ind'):
-    
+
     """
     Detect turning points from archive values of the series in real time.
     
@@ -1815,55 +1841,55 @@ def realTimeTPDetectionFromArchive(df, monthsToBeChecked = 3, indName = 'ind'):
     
     dfShifted = df.shift(periods = 1)
     dfIndex = df/dfShifted
-    
+
     firstMonth = None
     lastMonth = None
     firstEdition = None
     lastEdition = None
-    
+
     realTime = pd.DataFrame(data = 0, index = df.index, columns = [indName])
     foundAt = pd.DataFrame(data = 0, index = df.index, columns = [indName])
-    
+
     for i, item in enumerate(df.columns):
-    
+
         col = pd.DataFrame(dfIndex[item], columns = [item])
-        
+
         lastMonth = col.last_valid_index()
         monthsSelected = col.loc[(lastMonth - relativedelta(months = monthsToBeChecked - 1)) : lastMonth].copy()
         monthsSelected.dropna(inplace = True)
-        
-        if (firstMonth == None):
-            
+
+        if firstMonth is None:
+
             firstMonth = lastMonth
-        
+
         lastEdition = pd.to_datetime(item[-6:], format = '%Y%m')
-        
-        if (firstEdition == None):
-            
+
+        if firstEdition is None:
+
             firstEdition = lastEdition
-        
+
         if (monthsSelected.shape[0] == monthsToBeChecked): # this ignores non-complete data
-            
+
             if ((monthsSelected > 1)[item].sum() == monthsToBeChecked): # growth in last n months
-            
+
                 realTime.loc[lastMonth, indName] = -1
                 foundAt.loc[lastEdition, indName] = -1
-                
+
             elif ((monthsSelected < 1)[item].sum() == monthsToBeChecked): # decline in last n months
-                
+
                 realTime.loc[lastMonth, indName] = 1
                 foundAt.loc[lastEdition, indName] = 1
-    
+
     lastSeries = pd.DataFrame(df.iloc[ : , -1])
-    
+
     realTime = checkAlterations(lastSeries, realTime, keepFirst = True, showPlots = False)[firstMonth : lastMonth]
     foundAt = checkAlterations(lastSeries, foundAt, keepFirst = True, showPlots = False)[firstEdition : lastEdition]
-    
+
     # Delete false extremes at the beginning of the series
-    
+
     realTime.iloc[0] = 0
     foundAt.iloc[0] = 0
-    
+
     return(realTime, foundAt)
 
 
